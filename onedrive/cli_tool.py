@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 #-*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function
 
@@ -6,7 +6,7 @@ import itertools as it, operator as op, functools as ft
 from os.path import dirname, basename, exists, isdir, join, abspath
 from posixpath import join as ujoin, dirname as udirname, basename as ubasename
 from collections import defaultdict
-import os, sys, io, re, types, json
+import os, sys, io, logging, re, types, json
 
 try: import chardet
 except ImportError: chardet = None # completely optional
@@ -31,23 +31,31 @@ force_encoding = None
 
 def tree_node(): return defaultdict(tree_node)
 
-def print_result(data, file, indent='', indent_first=None, indent_level=' '*2):
+def print_result(data, file, tpl=None, indent='', indent_first=None, indent_level=' '*2):
 	# Custom printer is used because pyyaml isn't very pretty with unicode
 	if isinstance(data, list):
 		for v in data:
-			print_result( v, file=file, indent=indent + '  ',
+			print_result( v, file=file, tpl=tpl, indent=indent + '  ',
 				indent_first=(indent_first if indent_first is not None else indent) + '- ' )
 			indent_first = None
 	elif isinstance(data, dict):
 		indent_cur = indent_first if indent_first is not None else indent
-		for k, v in sorted(data.viewitems(), key=op.itemgetter(0)):
-			print(indent_cur + decode_obj(k, force=True) + ':', file=file, end='')
-			indent_cur = indent
-			if not isinstance(v, (list, dict)): # peek to display simple types inline
-				print_result(v, file=file, indent=' ')
-			else:
-				print('', file=file)
-				print_result(v, file=file, indent=indent_cur+indent_level)
+		if tpl is None:
+			for k, v in sorted(data.viewitems(), key=op.itemgetter(0)):
+				print(indent_cur + decode_obj(k, force=True) + ':', file=file, end='')
+				indent_cur = indent
+				if not isinstance(v, (list, dict)): # peek to display simple types inline
+					print_result(v, file=file, tpl=tpl, indent=' ')
+				else:
+					print('', file=file)
+					print_result(v, file=file, tpl=tpl, indent=indent_cur+indent_level)
+		else:
+			if '{' not in tpl and not re.search(r'^\s*$', tpl): tpl = '{{0[{}]}}'.format(tpl)
+			try: data = tpl.format(data)
+			except Exception as err:
+				log.debug( 'Omitting object that does not match template'
+					' (%r) from output (error: %s %s): %r', tpl, type(err), err, data )
+			else: print_result(data, file=file, indent=indent_cur)
 	else:
 		if indent_first is not None: indent = indent_first
 		print(indent + decode_obj(data, force=True), file=file)
@@ -99,6 +107,14 @@ def main():
 				' attributes of objects in the same parent folder might be used.')
 	parser.add_argument('-i', '--id', action='store_true',
 		help='Interpret file/folder arguments only as ids (default: guess).')
+
+	parser.add_argument('-k', '--object-key', metavar='spec',
+		help='If returned data is an object, or a list of objects, only print this key from there.'
+			' Supplied spec can be a template string for python str.format,'
+				' assuming that object gets passed as the first argument.'
+			' Objects that do not have specified key or cannot'
+				' be formatted using supplied template will be ignored entirely.'
+			' Example: {0[id]} {0[name]!r} {0[count]:03d} (uploader: {0[from][name]})')
 
 	parser.add_argument('-e', '--encoding', metavar='enc', default='utf-8',
 		help='Use specified encoding (example: utf-8) for CLI input/output.'
@@ -190,6 +206,10 @@ def main():
 		type=int, metavar='number',
 		default=api_v5.PersistentOneDriveAPI.api_bits_default_frag_bytes,
 		help='Fragment size for using BITS API (if used), in bytes. Default: %(default)s')
+	cmd.add_argument('--bits-do-auth-refresh-before-commit-hack', action='store_true',
+		help='Do auth_refresh trick before upload session commit request.'
+			' This is reported to avoid current (as of 2015-01-16) http 5XX errors from the API.'
+			' See github issue #39, gist with BITS API spec and the README file for more details.')
 
 	cmd = cmds.add_parser('cp', help='Copy file to a folder.')
 	cmd.add_argument('file', help='File (object) to copy.')
@@ -237,11 +257,10 @@ def main():
 	if optz.encoding:
 		global force_encoding
 		force_encoding = optz.encoding
-		import codecs
-		sys.stdin = codecs.getreader(optz.encoding)(sys.stdin)
-		sys.stdout = codecs.getwriter(optz.encoding)(sys.stdout)
+		reload(sys)
+		sys.setdefaultencoding(force_encoding)
 
-	import logging
+	global log
 	log = logging.getLogger()
 	logging.basicConfig(level=logging.WARNING
 	if not optz.debug else logging.DEBUG)
@@ -336,6 +355,8 @@ def main():
 
 	elif optz.call == 'put':
 		dst = optz.folder
+		if optz.bits_do_auth_refresh_before_commit_hack:
+			api.api_bits_auth_refresh_before_commit_hack = True
 		if optz.bits_frag_bytes > 0: api.api_bits_default_frag_bytes = optz.bits_frag_bytes
 		if dst is not None:
 			xres = api.put( optz.file, resolve_path(dst),
@@ -365,7 +386,7 @@ def main():
 	else:
 		parser.error('Unrecognized command: {}'.format(optz.call))
 
-	if res is not None: print_result(res, file=sys.stdout)
+	if res is not None: print_result(res, tpl=optz.object_key, file=sys.stdout)
 	if optz.debug and xres is not None:
 		buff = io.StringIO()
 		print_result(xres, file=buff)

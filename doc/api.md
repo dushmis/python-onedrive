@@ -18,6 +18,16 @@
         Only used with later versions of "requests" than 1.0.0 (where
         adapters were introduced).
 
+        Please do not touch these unless you've read requests module
+        documentation on what they actually do.
+
+    * request\_base\_headers = None
+
+        Dict of headers to pass on with each request made.
+
+        Can be useful if you want to e.g. disable gzip/deflate
+        compression or other http features that are used by default.
+
 
     * request(url, method='get', data=None, files=None, raw=False, raw\_all=False, headers={}, raise\_for={}, session=None)
 
@@ -36,7 +46,7 @@
         Client id/secret should be static on per-application basis.
 
         Can be received from LiveConnect by any registered user at:
-        https://manage.dev.live.com/
+        https://account.live.com/developers/applications/create
 
         API ToS can be found at: http://msdn.microsoft.com/en-US/library/live/ff765012
 
@@ -45,7 +55,7 @@
         Client id/secret should be static on per-application basis.
 
         Can be received from LiveConnect by any registered user at:
-        https://manage.dev.live.com/
+        https://account.live.com/developers/applications/create
 
         API ToS can be found at: http://msdn.microsoft.com/en-US/library/live/ff765012
 
@@ -132,11 +142,13 @@
 
     * api\_bits\_url\_by\_id = 'https://cid-{user_id}.users.storage.live.com/items/{folder_id}/{filename}'
 
-    * api\_bits\_url\_by\_path = 'https://cid-{user_id}.users.storage.live.com/users/0x{user_id}/LiveFolders/{folder_path}/{filename}'
+    * api\_bits\_url\_by\_path = 'https://cid-{user_id}.users.storage.live.com/users/0x{user_id}/LiveFolders/{file_path}'
 
     * api\_bits\_protocol\_id = '{7df0354d-249b-430f-820d-3d2a9bef4931}'
 
     * api\_bits\_default\_frag\_bytes = 10485760
+
+    * api\_bits\_auth\_refresh\_before\_commit\_hack = False
 
 
     * \_\_call\_\_(url='me/skydrive', query={}, query\_filter=True, auth\_header=False, auto\_refresh\_token=True, \*\*request\_kwz)
@@ -301,7 +313,7 @@
     Adds some derivative convenience methods over OneDriveAPIWrapper.
 
 
-    * resolve\_path(path, root\_id='me/skydrive', objects=False)
+    * resolve\_path(path, root\_id='me/skydrive', objects=False, listdir\_limit=500)
 
         Return id (or metadata) of an object, specified by chain
         (iterable or fs-style path string) of "name" attributes of its
@@ -345,14 +357,19 @@
 
     * conf\_path\_default = '~/.lcrc'
 
-    * conf\_update\_keys = {'client': set(['secret', 'id']), 'auth': set(['access\_token', 'code', 'access\_expires', 'refresh\_token'])}
+    * conf\_update\_keys = {'client': set(['secret', 'id']), 'request': set(['base\_headers', 'extra\_keywords', 'adapter\_settings']), 'auth': set(['access\_token', 'code', 'access\_expires', 'refresh\_token'])}
 
 
-    * classmethod from\_conf(path=None, \*\*overrides)
+    * from\_conf(path=None, \*\*overrides)
 
         Initialize instance from YAML configuration file, writing
         updates (only to keys, specified by "conf_update_keys") back to
         it.
+
+
+* **exception onedrive.api\_v5.APIUsageError**
+
+    Bases: "exceptions.Exception"
 
 
 * **exception onedrive.api\_v5.OneDriveInteractionError**

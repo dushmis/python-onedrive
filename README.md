@@ -7,8 +7,7 @@ python-onedrive
 used in its place - i.e. just replace any "python-skydrive" pkg-spec with that.
 
 Python and command-line interface for
-[OneDrive REST API (version 5.0)](http://msdn.microsoft.com/library/dn659752.aspx)
-(formerly known as SkyDrive).
+[old SkyDrive/OneDrive REST API](http://msdn.microsoft.com/library/dn659752.aspx).
 
 This module allows to access data on Microsoft OneDrive cloud storage from
 python code, abstracting authentication, http requests and response processing
@@ -23,6 +22,13 @@ Thanks to AntonioChen for implementing windows and unicode support (see
 Service was called SkyDrive prior to 2014-02-19, when it got renamed to OneDrive.
 This package similarly renamed from python-skydrive to python-onedrive.
 
+As mentioned, only old "apis.live.net/v5.0" (SkyDrive) API (and BITS API for
+large files) are used here.
+Since 24 Feb 2015, there is new "api.onedrive.com/v1.0" API
+([on github!](https://onedrive.github.io/)), as helpfully pointed out in
+[issue-52](https://github.com/mk-fg/python-onedrive/issues/52),
+which is not (yet?) supported in any way here.
+
 Be sure to read "Known Issues and Limitations" section below before use, to
 avoid any potentially nasty surprises.
 
@@ -32,8 +38,8 @@ Command-line usage
 ----------------------------------------
 
 OneDrive API requires to register an application in
-[DevCenter](https://dev.live.com/), providing you with client_id and
-client_secret strings, used for authentication.
+[DevCenter](https://account.live.com/developers/applications/create), providing
+you with client_id and client_secret strings, used for authentication.
 
 I can't provide some static ones because according to LiveConnect ToS "You are
 solely and entirely responsible for all uses of Live Connect occurring under
@@ -48,11 +54,12 @@ After that, create "~/.lcrc" file ([YAML](https://en.wikipedia.org/wiki/YAML))
 with the contents like these:
 
 	client:
-	  id: 00000000620A3E4A
+	  id: '00000000620A3E4A'
 	  secret: gndrjIOLWYLkOPl0QhWIliQcg-MG1SRN
 
-(use "id" and "secret" acquired in the app registration step above, *indent these
-lines with spaces* - indenting with tabs is not allowed in YAML)
+(use "id" and "secret" acquired in the app registration step above, *indent
+these lines with spaces* - indenting with tabs is not allowed in YAML; it might
+also be worth quoting "id" value, as shown above)
 
 Then you need to perform OAuth 2.0 authorization dance by running the
 `onedrive-cli auth` command and following printed instructions (visit printed
@@ -120,10 +127,23 @@ If you get HTTP error 400 right after or during "auth" command, read
 [this comment on #4](https://github.com/mk-fg/python-onedrive/issues/4#issuecomment-18233153)
 (maybe with some context).
 
+And if stuff still doesn't work, please check the "Known Issues and Limitations"
+section right below before reporting it, as some of these might be known and
+essentially unfixable.
+
 
 
 Known Issues and Limitations
 ----------------------------------------
+
+* Since 2015-02-24, there is a new
+	["api.onedrive.com/v1.0" API](https://onedrive.github.io/),
+	which allows to do a lot more than the old one.
+
+	This is not (yet?) supported in any way, and basically needs a new module for
+	it, which might be available elsewhere.
+
+	See also [issue-52](https://github.com/mk-fg/python-onedrive/issues/52).
 
 * Uploading of files larger than ~100 MiB via single POST/PUT request is
 	apparently not supported by OneDrive API - see
@@ -153,14 +173,73 @@ Known Issues and Limitations
 	is not supported. It seem to have different
 	[SharePoint 2013 API](http://msdn.microsoft.com/en-us/library/fp142380%28v=office.15%29.aspx).
 
-* Be very careful when relying on [BITS API](https://gist.github.com/rgregg/37ba8929768a62131e85),
-	as it seem to be in a very experimental state for regular OneDrive service, with
-	only info I've seen on it (in relation to OneDrive, and not other MS services)
-	being that linked gist (actually pointed out to me by @bobobo1618 in #34).
+* Relying on [BITS API](https://gist.github.com/rgregg/37ba8929768a62131e85) too
+	much might not be a good idea, as it seem to be in a very experimental state
+	for regular OneDrive service, with only info I've seen on it (in relation to
+	OneDrive, and not other MS services) being that linked gist (actually pointed
+	out to me by @bobobo1618 in #34).
 
 	Some issues with it (at the moment of writing this - 2014-12-08) are mentioned
 	in [#34](https://github.com/mk-fg/python-onedrive/issues/34)
 	and [#39](https://github.com/mk-fg/python-onedrive/issues/39).
+
+	If you use this api for large uploads via command-line script and are getting
+	annoying http 5XX errors at the end of the large uploads, check out the
+	`--bits-do-auth-refresh-before-commit-hack` flag for the "put" command.
+
+* Only in command-line script, HTTP error 400 ("Bad Request") during first
+	authentication process can sometimes be caused by using (i.e. putting it there
+	by hand) unquoted "jackpot" client_id in the YAML, which matches YAML octal
+	integer pattern (all digits, in 0-7 range).
+
+	Script detects this, emits a warning and tries to work around it, which should
+	work in most cases, but is not perfect, so try quoting the value if it fits
+	the above description. That's how it should be done for strings in YAML.
+
+* As was mentioned in [#45](https://github.com/mk-fg/python-onedrive/issues/45),
+	sometimes OneDrive might do strange things and users might want to tweak
+	passed http headers.
+
+	This can be easily done via "request_base_headers" class attribute or
+	"request" section in the "~/.lcrc" file (for command-line tool only), as
+	described in the comments on the issue linked above.
+
+* (A lot of) `WARNING:requests.packages.urllib3.connectionpool:Connection pool is
+	full, discarding connection` messages get logged when using (default) requests
+	http client module, especially when using BITS API.
+
+	These do not interfere with functionality (apart from obvious connection reuse
+	issue), only cause noise.
+	I've no idea what this module might be doing wrong to cause that, suggestions
+	are welcome.
+
+	What does not make it go away:
+
+	* Using default requests connection pool (i.e. `requests.request()`).
+
+	* Explicitly calling `Response.close()` for each response object.
+
+	* Using `pool_block=True`.
+
+		Seem to be bugged-out at the moment (2015-01-17) - always raises TypeError,
+		but should not be desirable in most cases (like default cli script) anyway.
+
+	* Setting `session.headers['Connection'] = 'keep-alive'`.
+
+	What can be done:
+
+	* Dig into requests/urllib3 code and docs, find out what goes (and/or is
+		done-) wrong here.
+
+	* Coming up with a small script that would reproduce the issue (if it is
+		indeed a bug in requests module) and submitting it to requests developers.
+
+	* When using python logging machinery, disable/filter
+		`requests.packages.urllib3.connectionpool` logger to just silence the
+		warnings.
+
+		Not using that in the cli script to avoid hiding the issue.
+
 
 
 Module usage
@@ -194,22 +273,21 @@ Installation
 
 It's a regular package for Python 2.7 (not 3.X).
 
-Using [pip](http://pip-installer.org/) (see also
-) is the best way:
+Using [pip](http://pip-installer.org/) is the best way:
 
-	% pip install 'python-onedrive[standalone]'
+	% pip install 'python-onedrive[cli]'
 
 If you don't have it, use:
 
 	% easy_install pip
-	% pip install 'python-onedrive[standalone]'
+	% pip install 'python-onedrive[cli]'
 
 Alternatively (see also
 [pip2014.com](http://pip2014.com/) and
 [install guide](http://www.pip-installer.org/en/latest/installing.html)):
 
 	% curl https://raw.github.com/pypa/pip/master/contrib/get-pip.py | python
-	% pip install 'python-onedrive[standalone]'
+	% pip install 'python-onedrive[cli]'
 
 Or, if you absolutely must:
 
@@ -221,9 +299,17 @@ Current-git version can be installed like this:
 
 	% pip install 'git+https://github.com/mk-fg/python-onedrive.git#egg=python-onedrive'
 
-"standalone" option above enables dependency on "requests" module, which is used
-as default HTTP client lib. If the plan is to extend or override that, flag can
-be dropped.
+
+"cli" option above enables dependency on "requests" and "PyYAML" modules, which
+are used as a default http client lib and for the cli tool configuration respectively.
+
+If the plan is to only use python module, "standalone" extras-flag can be used
+instead (will only pull in "requests" module).
+
+And in case the module is used with different http client lib (i.e. plan is to
+extend/override that), no flags can be specified to avoid dragging in extra
+(unused) deps.
+
 
 Note that to install stuff in system-wide PATH and site-packages, elevated
 privileges are often required.
@@ -244,12 +330,14 @@ without any installation, if that's the only thing you need there.
 	[requests](http://docs.python-requests.org/en/latest/) - version 0.14.0 or
 	higher.
 
-	Should be installed automatically by pip if "[standalone]"
+	Should be installed automatically by pip if "[standalone]" or "[cli]"
 	[extras-flag](https://pythonhosted.org/setuptools/setuptools.html#declaring-extras)
 	is specified, as suggested above.
 
 * (optional, recommended) [PyYAML](http://pyyaml.org) - required for CLI tool
 	and optional persistent-state ("conf") module only.
+
+	Gets pulled-in as a dependency with "[cli]" or "[conf]" extras-flag.
 
 * (only on windows) [pywin32](http://sourceforge.net/projects/pywin32/) - for
 	CLI tool (used to lock configuration file on changes) and optional conf module
@@ -281,8 +369,9 @@ well-known for it's proprietary "cripple-everything-else" extension creep
 Microsoft.
 It has a twist in authrization_code grant flow for "mobile" apps, where bearer
 token refresh can be performed without having to provide client_secret. Client
-app must be marked as "mobile" in [DevCenter](https://dev.live.com/) for
-that to work.
+app must be marked as "mobile" in
+[DevCenter](https://account.live.com/developers/applications/create)
+for that to work.
 There's also totally LiveConnect-specific "Sign-In" auth flow.
 Access tokens for OneDrive scopes (plus wl.offline) seem to be issued with ttl
 of one hour.
